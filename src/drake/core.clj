@@ -8,6 +8,7 @@
             [fs.core :as fs]
             [clojopts.ui :as clojopts]
             [flatland.useful.state :as state]
+            [flatland.useful.utils :refer [let-later]]
             ;; register built-in protocols
             drake.protocol_interpreters
             drake.protocol_c4
@@ -15,6 +16,7 @@
             drake.event
             [drake.stdin :as stdin]
             [drake.steps :as steps]
+            [drake.viz :as viz :refer [viz]]
             [drake.plugins :as plugins]
             [drake.fs :as dfs :refer [fs]]
             [drake.protocol :refer [get-protocol-name get-protocol]]
@@ -30,7 +32,10 @@
   (:gen-class :methods [#^{:static true} [run_opts [java.util.Map] void]
                         #^{:static true} [run_opts_with_event_bus [java.util.Map com.google.common.eventbus.EventBus] void]]))
 
-(def VERSION "0.1.6")
+(defn- shutdown [exit-code]
+  (throw+ {:exit-code exit-code}))
+
+(def VERSION "1.0.1")
 (def DEFAULT-VARS-SPLIT-REGEX-STR ; matches and consumes a comma; requires that an even number of "
                                   ; characters exist between the comma and end of string
   "(?x)       ## (?x) enables inline formatting and comments
@@ -96,13 +101,21 @@
     (assoc step :inputs branch-adjusted-inputs
                 :outputs branch-adjusted-outputs)))
 
-(defn- normalize-filename-for-run
+(defn- normalize-filename-for-run*
   "Normalizes filename and also removes local filesystem prefix (file:) from
    it. This is safe to do since it's the default filesystem,
    but it gives us a bit easier compatibility with existing tools."
   [filename]
   (let [n (dfs/normalized-path filename)]
-    (if (= "file" (dfs/path-fs n)) (dfs/path-filename n) n)))
+    (if (= "file" (dfs/path-fs n))
+      (dfs/path-filename n)
+      n)))
+
+(defn- normalize-filename-for-run
+  [filename]
+  (parser/modify-filename
+   filename
+   normalize-filename-for-run*))
 
 (defn- despace-cmds
   "Given a sequence of commands, removes leading whitespace found in the first
@@ -139,7 +152,7 @@
         normalized-outputs (map normalize-filename-for-run outputs)
         normalized-inputs (map normalize-filename-for-run inputs)
         vars (merge vars
-                    (parser/inouts-map normalized-inputs "INPUT")
+                    (parser/existing-inputs-map normalized-inputs "INPUT")
                     (parser/inouts-map normalized-outputs "OUTPUT"))
         method (methods (:method opts))
         method-mode (:method-mode opts)
@@ -171,6 +184,16 @@
       :vars vars
       :opts (if-not method opts (merge (:opts method) opts)))))
 
+(defn- existing-and-empty-inputs
+  "Remove '?' denoting optional file from front of path"
+  [inputs]
+  (let [inputs-info (map parser/make-file-stats inputs)]
+    {:existing (->> (filter :exists inputs-info)
+                    (map :path))
+     ;; Non-existing, non-optional inputs
+     :missing (->> (remove (some-fn :optional :exists) inputs-info)
+                   (map :path))}))
+
 (defn- should-build?
   "Given the parse tree and a step index, determines whether it should
    be built and returns the reason (e.g. 'timestamped') or
@@ -190,7 +213,7 @@
   [step forced triggered match-type fail-on-empty]
   (trace "should-build? fail-on-empty: " fail-on-empty)
   (let [{:keys [inputs outputs opts]} (branch-adjust-step step false)
-        empty-inputs (filter #(not (fs di/data-in? %)) inputs)
+        {inputs :existing empty-inputs :missing} (existing-and-empty-inputs inputs)
         no-outputs (empty? outputs)]
     (trace "should-build? forced:" forced)
     (trace "should-build? match-type:" match-type)
@@ -315,16 +338,6 @@
    true if the step was actually run; false if skipped."
   [parse-tree step-number {:keys [index build match-type opts]}]
   (let [{:keys [inputs] :as step} (get-in parse-tree [:steps index])]
-    ;; TODO(artem)
-    ;; Somewhere here, before running the step or checking timestamps, we need to
-    ;; check for optional files and replace them with empty strings if they're
-    ;; not found (according to the spec). We shouldn't just rewrite :inputs and
-    ;; should probably separate two versions, since the step name
-    ;; (used in debugging and log files names) should not vary.
-    ;; For now just check that none of the input files is optional.
-    (if (some #(= \? (first %)) inputs)
-      (throw+ {:msg (str "optional input files are not supported yet: "
-                         inputs)}))
     (let [step-descr (step-string (branch-adjust-step step false))
           step (-> step
                    (update-in [:opts] merge opts)
@@ -594,6 +607,29 @@
                                      (count steps)
                                      ")")}))))))))))
 
+(defn graph-steps
+  "Draw a graph visualizing workflow of steps to run, and saves it to disk or display on screen."
+  [mode parse-tree steps-to-run]
+  (require 'rhizome.dot)
+  (let-later [done (promise)
+              ^:delay dot (viz/step-tree parse-tree steps-to-run)
+              ^:delay img (viz dot->image dot)
+              ^:delay frame (viz create-frame {:name "Workflow visualization"
+                                               :close-promise done
+                                               :dispose-on-close? true})]
+    (case mode
+      ("dot") (do (spit "drake.dot" dot)
+                  (println "DOT file saved to drake.dot"))
+      (true "png") (do (System/setProperty "java.awt.headless" "true")
+                       (require 'rhizome.viz)
+                       (viz save-image img "drake.png")
+                       (println "Image saved to drake.png"))
+      ("show") (do (require 'rhizome.viz)
+                   (viz view-image frame img)
+                   (deref done))
+      (throw+ {:msg (format "Unrecognized --graph mode '%s'" mode)
+               :exit-code -1}))))
+
 (defn print-steps
   "Prints inputs and outputs of steps to run."
   [parse-tree steps-to-run]
@@ -617,6 +653,8 @@
     (trace "-------------------")
     (let [steps-to-run (predict-steps parse-tree target-steps)]
       (cond
+       (:graph *options*)
+         (graph-steps (:graph *options*) parse-tree steps-to-run)
        (empty? steps-to-run)
          (info "Nothing to do.")
        (:print *options*)
@@ -634,9 +672,6 @@
   (when-let [java-cmd (-> (System/getProperties)
                           (get "sun.java.command"))]
     (.endsWith ^String java-cmd "nailgun.NGServer")))
-
-(defn- shutdown [exit-code]
-  (throw+ {:exit-code exit-code}))
 
 (defn parse-cli-vars [vars-str split-regex-str]
   (when-not (empty? vars-str)
@@ -671,9 +706,8 @@
      (parse-cli-vars (:vars *options*) split-regex-str)
      (into {} (for [v (:var *options*)]
                 (str/split v #"=")))
-     (if-let [base (:base *options*)]
-       {"BASE" base}
-       {"BASE" (fs/absolute-path (fs/parent (figure-workflow-file)))}))))
+     {"BASE" (or (:base *options*)
+                 (fs/absolute-path (fs/parent (figure-workflow-file))))})))
 
 (defn- with-workflow-file
   "Reads the workflow file from command-line options, parses it,
@@ -708,6 +742,14 @@
               parse-tree (assoc parse-tree :steps steps)]
           (f parse-tree))))))
 
+(defn- get-logfile [logfile]
+  (if (fs/absolute? logfile)
+    logfile
+    (let [w (:workflow *options*)]
+      (if (fs/directory? w)
+        (fs/file w logfile)
+        (fs/file (fs/parent w) logfile)))))
+
 (defn configure-logging
   []
   (let [loglevel (cond
@@ -716,10 +758,7 @@
                    (:quiet *options*) :error
                    :else :info)
         logfile (:logfile *options*)
-        logfile (if (fs/absolute? logfile)
-                  logfile
-                  (fs/file (fs/parent (:workflow *options*))
-                           logfile))]
+        logfile (get-logfile logfile)]
     (log4j/set-loggers! "drake"
                         {:out logfile
                          :level loglevel
@@ -771,11 +810,11 @@
 
 (defn- check-for-conflicts
   [opts]
-  (let [groups [#{:print :auto}
-                #{:print :preview}
+  (let [groups [#{:print :auto :graph}
+                #{:print :preview :graph}
                 #{:branch :merge-branch}
                 #{:debug :trace :quiet}]
-        crossovers [[#{:quiet :step-delay} #{:print :preview}]]
+        crossovers [[#{:quiet :step-delay} #{:print :preview :graph}]]
         option-list (fn [opts] (str/join ", " (map #(str "--" (name %)) opts)))
         complain (fn [msg]
                    (println msg)
@@ -851,7 +890,8 @@
           (with-workflow-file #(f % targets)))
         (shutdown 0)
         (catch map? m
-          (error (str "drake: " (:msg m)))
+          (when (or (:msg m) (not (zero? (:exit-code m))))
+            (error (str "drake: " (:msg m))))
           (shutdown (get m :exit-code 1)))
         (catch Exception e
           (error (stack-trace-str e))
@@ -870,7 +910,8 @@
           (do
             (debug "core/shutdown: Running standalone; calling (shutdown-agents)")
             (shutdown-agents)))
-        (System/exit exit-code)))))
+        (when-not (zero? exit-code)
+          (System/exit exit-code))))))
 
 (defn run-opts [opts]
   (let [opts (merge {:auto true} opts)]

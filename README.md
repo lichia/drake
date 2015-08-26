@@ -1,6 +1,6 @@
 # Drake
 
-<img src="https://lh6.googleusercontent.com/-ambIXyQ9iK8/UPj3E2_eqpI/AAAAAAAAACE/Ssf_jhok7fk/s800/drake-text-alpha-scaled-left-space.png" align="right"/>
+<img src="http://gdurl.com/2jhD" align="right"/>
 
 Drake is a simple-to-use, extensible, text-based data workflow tool that organizes command execution around data and its dependencies. Data processing steps are defined along with their inputs and outputs and Drake automatically resolves their dependencies and calculates:
 
@@ -19,72 +19,47 @@ If you like screencasts, check out this [Drake walk-through video](http://www.yo
 
 ## Installation
 
-You will need to have a JVM installed. Drake has been tested under Linux, Mac OS X and Windows 8.
-We've not tested it on other operating systems.
+Drake has been tested under Linux, Mac OS X and Windows 8. We've not tested it on other operating systems.
+
+Drake installs itself on the first run of the `drake` shell script; there is no
+separate install script.  Follow these instructions to install drake manually:
+
+1. Make sure you have [Java](https://www.java.com) version 6 or later.
+2. [Download the `drake` script from the `master` branch](https://raw.githubusercontent.com/Factual/drake/master/bin/drake)
+ of this project.
+3. Place the `drake` script on your `$PATH`. (`~/bin` is a good choice if it is on your path.)
+4. Set it to be executable. (`chmod 755 ~/bin/drake`)
+5. Run it (`drake`) 
+
+### Homebrew
+
+If you're on a Mac you can alternatively use [Homebrew](http://brew.sh/) to install Drake:
+```
+brew install drake
+```
+
+### Upgrade Drake
+
+Starting with Drake version 1.0.0, once you have Drake installed you can easily upgrade your version of Drake by running `drake --upgrade`. The latest version of Drake will be downloaded and installed for you.
 
 ### Download or build the uberjar
 
-You can build Drake from source, which is the preferred way to run the most
-up-to-date version, or you can
-[download a prebuilt uberjar](https://docs.google.com/uc?export=download&confirm=nT8F&id=0B2xtKcFEL6wwWnRzVzRZcGFFaWc)
+You can build Drake from source or run from a prebuilt jar. [Detailed instructions](https://github.com/Factual/drake/wiki/Download-or-build-the-uberjar)
 
-,which may not be the most recent version of Drake.
-
-Following are instructions for building from source. Drake is a Clojure project, so you will need to have [leiningen](https://github.com/technomancy/leiningen).
-
-#### Clone the project:
-
-```bash
-$ git clone git@github.com:Factual/drake.git
-$ cd drake
-```
-
-#### Build the uberjar:
-
-```bash
-$ lein uberjar
-```
-
-### Run Drake from the uberjar
-
-Once you've built or downloaded the uberjar, you can run Drake like this:
-
-```bash
-$ java -jar drake.jar
-```
-
-You can pass in arguments and options to Drake by putting them at the end of the above command, e.g.:
-
-```bash
-$ java -jar drake.jar --version
-```
 
 ### Use Drake as a Clojure library
 
 You can programmatically use Drake from your Clojure project by using [Drake's Clojure front end](https://github.com/Factual/drake/wiki/A-Clojure-Frontend-to-Drake). Your project.clj dependencies should include the latest Drake library, e.g.:
 
 ```clojure
-[factual/drake "0.1.6"]
+[factual/drake "1.0.1"]
 ```
-
-### A nicer way to run Drake
-
-For command line usage, we recommend you "install" Drake in your environment so that you can run it by just typing "drake". Here's a convenience script you can put on your path:
-
-```bash
-#!/bin/bash
-java -cp $(dirname $0)/drake.jar drake.core "$@"
-```
-
-Save that as `drake`, then do `chmod 755 drake`. Move the uberjar to be in the same directory. Now you can just type `drake` to run Drake from anywhere.
 
 ### Faster startup time
 
 The JVM startup time can be a nuisance. To reduce startup time, we recommend using the way cool [Drip](https://github.com/flatland/drip). Please see [the Drake with Drip](https://github.com/Factual/drake/wiki/Faster-startup:-Drake-with-Drip) wiki page.
 
 ## Basic Usage
-
-Drake documentation refers to running Drake as "drake". If you are instead running the uberjar, just replace "drake" with "java -jar drake.jar" in the examples.
 
 The [wiki](https://github.com/Factual/drake/wiki) is the home for Drake's documentation, but here are simple notes on usage:
 
@@ -154,6 +129,11 @@ There are annotated workflow examples in the demos directory.
 
 There's a [Google Group for Drake](https://groups.google.com/forum/?fromgroups#!forum/drake-workflow) where you can ask questions. And if you found a bug or want to submit a feature request, go to [Drake's GitHub issues page](https://github.com/Factual/drake/issues?sort=created&state=open).
 
+## Visualize your workflow
+See more [detail](https://github.com/Factual/drake/wiki/Visualize-your-workflow)
+
+<img src="https://cloud.githubusercontent.com/assets/855457/7533038/509e37f8-f5a0-11e4-8c2e-8951272811af.png"/>
+
 ## Asynchronous Execution of Steps
 
 Please see [the wiki page on async](https://github.com/Factual/drake/wiki/Async-Execution-of-Steps).
@@ -189,8 +169,14 @@ Also thanks to [Lars Yencken](https://github.com/larsyencken), [utilities for ma
 
 Courtesy of [@daguar](https://gist.github.com/daguar), an [alternative approach to installing Drake on Mac OS X](https://gist.github.com/daguar/5368778).
 
+[Original blog post](http://blog.factual.com/introducing-drake-a-kind-of-make-for-data) announcing Drake's open source release
+
+[An epic knock-down-drag-out set of threads on Hacker News](https://news.ycombinator.com/item?id=5110921) discussing the design merits of Drake
+
+
+
 ## License
 
-Source Copyright © 2012-2013 Factual, Inc.
+Source Copyright © 2012-2015 Factual, Inc.
 
 Distributed under the Eclipse Public License, the same as Clojure uses. See the file COPYING.
